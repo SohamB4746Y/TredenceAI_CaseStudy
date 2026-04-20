@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+
+# Data and outputs
+data/
+outputs/
+pdf_extracted/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
