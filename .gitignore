@@ -12,6 +12,7 @@ outputs_final/
 outputs_probe/
 outputs_probe2/
 outputs_probe3/
+outputs_histfix/
 pdf_extracted/
 
 .DS_Store
