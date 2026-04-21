@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,12 +5,11 @@ __pycache__/
 *.egg-info/
 .venv/
 
-# Data and outputs
 data/
 outputs/
+outputs_quick/
 pdf_extracted/
 
-# OS/editor
 .DS_Store
 Thumbs.db
 .vscode/

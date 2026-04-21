@@ -1,16 +1,3 @@
-"""
-Self-Pruning Neural Network on CIFAR-10
-
-This script implements:
-1) A custom PrunableLinear layer with learnable gate scores.
-2) Sparsity regularization using an L1 penalty on sigmoid(gate_scores).
-3) Training/evaluation across multiple lambda values.
-4) Automatic result export (CSV/JSON), histogram plotting, and markdown report generation.
-
-Usage example:
-python self_pruning_cifar10.py --epochs 20 --batch-size 128 --lambdas 1e-5 5e-5 1e-4
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,29 +18,16 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 
-# -----------------------------
-# Reproducibility helpers
-# -----------------------------
 def set_seed(seed: int = 42) -> None:
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # Determinism can reduce throughput, but makes comparisons easier.
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
 
-# -----------------------------
-# Core prunable layer
-# -----------------------------
 class PrunableLinear(nn.Module):
-    """A linear layer whose individual weights are multiplicatively gated.
-
-    Each weight has a learnable `gate_score`. We transform scores via sigmoid
-    to obtain gates in (0, 1), and use `weight * gates` as effective weights.
-    """
-
     def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
         super().__init__()
         self.in_features = in_features
@@ -65,8 +39,8 @@ class PrunableLinear(nn.Module):
         else:
             self.register_parameter("bias", None)
 
-        # Same shape as weight, trainable by optimizer.
         self.gate_scores = nn.Parameter(torch.empty(out_features, in_features))
+        self.gate_shift = -3.0
 
         self.reset_parameters()
 
@@ -77,21 +51,16 @@ class PrunableLinear(nn.Module):
             bound = 1 / fan_in**0.5
             nn.init.uniform_(self.bias, -bound, bound)
 
-        # Start mostly closed: sigmoid(-2.0) ~= 0.12.
-        # This encourages the model to open only useful connections.
         nn.init.constant_(self.gate_scores, -2.0)
 
     def gates(self) -> torch.Tensor:
-        return torch.sigmoid(self.gate_scores)
+        return torch.sigmoid(self.gate_scores + self.gate_shift)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         gated_weight = self.weight * self.gates()
         return F.linear(x, gated_weight, self.bias)
 
 
-# -----------------------------
-# Model
-# -----------------------------
 class PrunableMLP(nn.Module):
     def __init__(self, input_dim: int = 3 * 32 * 32, num_classes: int = 10) -> None:
         super().__init__()
@@ -115,7 +84,6 @@ class PrunableMLP(nn.Module):
                 yield module
 
     def sparsity_loss(self) -> torch.Tensor:
-        # L1 on positive gates == sum(gates)
         return sum(layer.gates().sum() for layer in self.prunable_layers())
 
     def collect_gate_values(self) -> torch.Tensor:
