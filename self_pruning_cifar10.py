@@ -212,13 +212,29 @@ def compute_sparsity(model: PrunableMLP, threshold: float = 1e-2) -> float:
 
 def save_gate_histogram(gates: torch.Tensor, output_path: Path, bins: int = 100) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.figure(figsize=(8, 5))
-    plt.hist(gates.cpu().numpy(), bins=bins)
-    plt.title("Distribution of Final Gate Values")
-    plt.xlabel("Gate value")
-    plt.ylabel("Count")
+    g = gates.cpu().numpy()
+    q1 = float(torch.quantile(gates, 0.01).item())
+    q99 = float(torch.quantile(gates, 0.99).item())
+    if q99 <= q1:
+        q1 = float(g.min()) - 1e-4
+        q99 = float(g.max()) + 1e-4
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    axes[0].hist(g, bins=bins)
+    axes[0].set_title("Global Gate Distribution")
+    axes[0].set_xlabel("Gate value")
+    axes[0].set_ylabel("Count")
+
+    axes[1].hist(g, bins=bins)
+    axes[1].set_xlim(q1, q99)
+    axes[1].set_title("Zoomed (1st–99th percentile)")
+    axes[1].set_xlabel("Gate value")
+    axes[1].set_ylabel("Count")
+
+    fig.suptitle("Distribution of Final Gate Values", fontsize=13)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
+    plt.savefig(output_path, dpi=180)
     plt.close()
 
 
