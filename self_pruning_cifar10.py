@@ -77,8 +77,9 @@ class PrunableLinear(nn.Module):
             bound = 1 / fan_in**0.5
             nn.init.uniform_(self.bias, -bound, bound)
 
-        # Start at sigmoid(0)=0.5 so training can move gates in either direction.
-        nn.init.constant_(self.gate_scores, 0.0)
+        # Start mostly closed: sigmoid(-2.0) ~= 0.12.
+        # This encourages the model to open only useful connections.
+        nn.init.constant_(self.gate_scores, -2.0)
 
     def gates(self) -> torch.Tensor:
         return torch.sigmoid(self.gate_scores)
@@ -94,9 +95,9 @@ class PrunableLinear(nn.Module):
 class PrunableMLP(nn.Module):
     def __init__(self, input_dim: int = 3 * 32 * 32, num_classes: int = 10) -> None:
         super().__init__()
-        self.fc1 = PrunableLinear(input_dim, 1024)
-        self.fc2 = PrunableLinear(1024, 512)
-        self.fc3 = PrunableLinear(512, num_classes)
+        self.fc1 = PrunableLinear(input_dim, 512)
+        self.fc2 = PrunableLinear(512, 256)
+        self.fc3 = PrunableLinear(256, num_classes)
         self.dropout = nn.Dropout(0.2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -152,8 +153,21 @@ def build_dataloaders(data_dir: Path, batch_size: int, num_workers: int = 2) -> 
     train_set = torchvision.datasets.CIFAR10(root=str(data_dir), train=True, download=True, transform=train_transform)
     test_set = torchvision.datasets.CIFAR10(root=str(data_dir), train=False, download=True, transform=test_transform)
 
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    pin_memory = torch.cuda.is_available()
+    train_loader = DataLoader(
+        train_set,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+    test_loader = DataLoader(
+        test_set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
     return train_loader, test_loader
 
 
@@ -297,7 +311,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--sparsity-threshold", type=float, default=1e-2, help="Gate threshold for sparsity metric")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--num-workers", type=int, default=2, help="DataLoader workers")
+    parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers")
     return parser.parse_args()
 
 
