@@ -27,3 +27,7 @@ Example run:
 ## Notes
 - Higher lambda usually increases sparsity but may reduce test accuracy.
 - `outputs/report.md` is generated from actual run metrics and is ready to submit.
+
+## Submitted Deliverables
+- Report (tracked): [deliverables/CASE_STUDY_REPORT.md](deliverables/CASE_STUDY_REPORT.md)
+- Gate histogram (tracked): [deliverables/best_model_gate_histogram.png](deliverables/best_model_gate_histogram.png)
