@@ -12,14 +12,14 @@ Because all $g_i$ are non-negative, minimizing this term drives many gates towar
 As gates shrink, effective weights $w_i \cdot g_i$ are suppressed, which behaves like pruning.
 The classifier keeps only useful connections under the tradeoff controlled by $\lambda$.
 
-## Results (Quick CIFAR-10 run)
+## Results (Final CIFAR-10 run)
 
 | Lambda | Test Accuracy (%) | Sparsity Level (%) |
 |---:|---:|---:|
-| 1.0e-02 | 10.00 | 0.00 |
-| 5.0e-02 | 10.00 | 100.00 |
-| 1.0e-01 | 10.00 | 100.00 |
+| 0.0e+00 | 67.66 | 0.00 |
+| 1.0e-06 | 67.69 | 0.00 |
+| 5.0e-06 | 67.76 | 0.00 |
 
-## Gate value distribution (best model from this quick run)
+## Gate value distribution (best model from final run)
 
 ![Gate Histogram](best_model_gate_histogram.png)

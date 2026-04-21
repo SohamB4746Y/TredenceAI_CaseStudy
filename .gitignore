@@ -8,6 +8,10 @@ __pycache__/
 data/
 outputs/
 outputs_quick/
+outputs_final/
+outputs_probe/
+outputs_probe2/
+outputs_probe3/
 pdf_extracted/
 
 .DS_Store

@@ -40,7 +40,7 @@ class PrunableLinear(nn.Module):
             self.register_parameter("bias", None)
 
         self.gate_scores = nn.Parameter(torch.empty(out_features, in_features))
-        self.gate_shift = -3.0
+        self.gate_shift = -2.0
 
         self.reset_parameters()
 
@@ -51,10 +51,10 @@ class PrunableLinear(nn.Module):
             bound = 1 / fan_in**0.5
             nn.init.uniform_(self.bias, -bound, bound)
 
-        nn.init.constant_(self.gate_scores, -2.0)
+        nn.init.constant_(self.gate_scores, 2.0)
 
     def gates(self) -> torch.Tensor:
-        return torch.sigmoid(self.gate_scores + self.gate_shift)
+        return torch.sigmoid(3.0 * (self.gate_scores + self.gate_shift))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         gated_weight = self.weight * self.gates()
@@ -62,14 +62,29 @@ class PrunableLinear(nn.Module):
 
 
 class PrunableMLP(nn.Module):
-    def __init__(self, input_dim: int = 3 * 32 * 32, num_classes: int = 10) -> None:
+    def __init__(self, num_classes: int = 10) -> None:
         super().__init__()
-        self.fc1 = PrunableLinear(input_dim, 512)
-        self.fc2 = PrunableLinear(512, 256)
-        self.fc3 = PrunableLinear(256, num_classes)
-        self.dropout = nn.Dropout(0.2)
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+        )
+        self.fc1 = PrunableLinear(128 * 4 * 4, 256)
+        self.fc2 = PrunableLinear(256, 128)
+        self.fc3 = PrunableLinear(128, num_classes)
+        self.dropout = nn.Dropout(0.35)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
@@ -145,6 +160,7 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     lambda_sparse: float,
     device: torch.device,
+    label_smoothing: float,
 ) -> tuple[float, float, float]:
     model.train()
     total_loss, total_cls, total_sparse = 0.0, 0.0, 0.0
@@ -155,7 +171,7 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
         logits = model(images)
 
-        cls_loss = F.cross_entropy(logits, labels)
+        cls_loss = F.cross_entropy(logits, labels, label_smoothing=label_smoothing)
         sparse_loss = model.sparsity_loss()
         loss = cls_loss + lambda_sparse * sparse_loss
 
@@ -268,16 +284,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("./outputs"), help="Where to save artifacts")
     parser.add_argument("--epochs", type=int, default=10, help="Training epochs per lambda")
     parser.add_argument("--batch-size", type=int, default=128, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--weight-decay", type=float, default=1e-4, help="Optimizer weight decay")
+    parser.add_argument("--lr", type=float, default=0.05, help="Learning rate")
+    parser.add_argument("--weight-decay", type=float, default=5e-4, help="Optimizer weight decay")
     parser.add_argument(
         "--lambdas",
         type=float,
         nargs="+",
-        default=[1e-5, 1e-4, 5e-4],
+        default=[0.0, 1e-6, 5e-6],
         help="List of lambda values to evaluate",
     )
     parser.add_argument("--sparsity-threshold", type=float, default=1e-2, help="Gate threshold for sparsity metric")
+    parser.add_argument("--label-smoothing", type=float, default=0.05, help="Label smoothing value")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers")
     return parser.parse_args()
@@ -300,14 +317,30 @@ def main() -> None:
     for lam in args.lambdas:
         print(f"\n=== Training with lambda={lam:.1e} ===")
         model = PrunableMLP().to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=args.lr,
+            momentum=0.9,
+            nesterov=True,
+            weight_decay=args.weight_decay,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
         for epoch in range(1, args.epochs + 1):
-            total_loss, cls_loss, sparse_loss = train_one_epoch(model, train_loader, optimizer, lam, device)
+            total_loss, cls_loss, sparse_loss = train_one_epoch(
+                model,
+                train_loader,
+                optimizer,
+                lam,
+                device,
+                args.label_smoothing,
+            )
             test_acc = evaluate(model, test_loader, device)
+            scheduler.step()
+            current_lr = optimizer.param_groups[0]["lr"]
             print(
                 f"Epoch {epoch:02d}/{args.epochs} | total={total_loss:.4f} "
-                f"cls={cls_loss:.4f} sparse={sparse_loss:.4f} | test_acc={test_acc:.2f}%"
+                f"cls={cls_loss:.4f} sparse={sparse_loss:.4f} lr={current_lr:.6f} | test_acc={test_acc:.2f}%"
             )
 
         final_acc = evaluate(model, test_loader, device)
